@@ -33,7 +33,7 @@ export const ProblemSolutionSection: React.FC = () => {
   ];
 
   return (
-    <section className="py-16 sm:py-20 lg:py-24 bg-muted/30">
+    <section className="py-12 sm:py-16 lg:py-20 bg-muted/30">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* Solution Section */}
@@ -46,11 +46,11 @@ export const ProblemSolutionSection: React.FC = () => {
             accessibility issues with a single click—no installation required.
           </p>
           
-          <div className="grid sm:grid-cols-2 gap-6 lg:gap-8 text-left">
+          <div className="grid sm:grid-cols-2 gap-6 lg:gap-8">
             {solutionFeatures.map((feature, index) => (
-              <Card key={index} className="bg-card shadow-soft hover:shadow-medium transition-shadow">
+              <Card key={index} className="text-left bg-card shadow-soft hover:shadow-medium transition-shadow">
                 <CardContent className="p-6">
-                  <div className="flex items-start gap-4">
+                  <div className="flex items-start space-x-4">
                     <div className="bg-success-light rounded-full p-2 flex-shrink-0">
                       <feature.icon className="w-5 h-5 text-success" />
                     </div>
