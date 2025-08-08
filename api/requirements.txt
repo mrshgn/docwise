@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-multipart
+python-docx
+python-pptx
+pymupdf
+pytesseract
+pillow
+requests
+openai
+gTTS

@@ -33,24 +33,24 @@ export const ProblemSolutionSection: React.FC = () => {
   ];
 
   return (
-    <section className="py-20 bg-muted/30">
-      <div className="container mx-auto px-4">
+    <section className="py-16 sm:py-20 lg:py-24 bg-muted/30">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* Solution Section */}
         <div className="text-center">
-          <h2 className="text-3xl md:text-4xl font-bold mb-6">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-6">
             Our <span className="bg-gradient-primary bg-clip-text text-transparent">Solution</span>
           </h2>
-          <p className="text-xl text-muted-foreground max-w-3xl mx-auto mb-12">
+          <p className="text-lg sm:text-xl text-muted-foreground max-w-3xl mx-auto mb-8 sm:mb-12">
             Cloud-based AI that analyzes document structure and automatically fixes 
             accessibility issues with a single click—no installation required.
           </p>
           
-          <div className="grid md:grid-cols-2 gap-8">
+          <div className="grid sm:grid-cols-2 gap-6 lg:gap-8 text-left">
             {solutionFeatures.map((feature, index) => (
-              <Card key={index} className="text-left bg-card shadow-soft hover:shadow-medium transition-shadow">
+              <Card key={index} className="bg-card shadow-soft hover:shadow-medium transition-shadow">
                 <CardContent className="p-6">
-                  <div className="flex items-start space-x-4">
+                  <div className="flex items-start gap-4">
                     <div className="bg-success-light rounded-full p-2 flex-shrink-0">
                       <feature.icon className="w-5 h-5 text-success" />
                     </div>
