@@ -3,15 +3,22 @@ import { Button } from '@/components/ui/button';
 import { FileUpload } from '@/components/ui/file-upload';
 import { ArrowRight, Shield, Zap, Users } from 'lucide-react';
 import heroImage from '@/assets/hero-accessibility.jpg';
-
+import { useNavigate } from 'react-router-dom';
+import { toast } from '@/components/ui/use-toast';
 export const HeroSection: React.FC = () => {
+  const navigate = useNavigate();
   const handleFileUpload = (files: File[]) => {
-    console.log('Files uploaded:', files);
-    // Here you would typically send files to your analysis service
+    toast({
+      title: "Upload received",
+      description: `${files.length} document${files.length > 1 ? 's' : ''} queued for processing.`
+    });
+    navigate('/analyze', {
+      state: {
+        files
+      }
+    });
   };
-
-  return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
+  return <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
       {/* Background gradient */}
       <div className="absolute inset-0 bg-gradient-hero opacity-10" />
       
@@ -48,7 +55,7 @@ export const HeroSection: React.FC = () => {
               </div>
               <div className="flex items-center space-x-2">
                 <Users className="w-5 h-5 text-primary" />
-                <span className="text-sm font-medium">60M+ Users Helped</span>
+                <span className="text-sm font-medium">Easy to Use</span>
               </div>
             </div>
 
@@ -63,18 +70,11 @@ export const HeroSection: React.FC = () => {
               </p>
             </div>
             
-            <FileUpload 
-              onFileUpload={handleFileUpload}
-              className="bg-card shadow-large border-2"
-            />
+            <FileUpload onFileUpload={handleFileUpload} className="bg-card shadow-large border-2" />
             
             {/* Visual Document Preview */}
             <div className="relative">
-              <img 
-                src={heroImage} 
-                alt="Before and after document accessibility comparison" 
-                className="w-full rounded-lg shadow-medium animate-float"
-              />
+              <img src={heroImage} alt="Before and after document accessibility comparison" className="w-full rounded-lg shadow-medium animate-float" />
               <div className="absolute top-4 left-4 bg-card/90 backdrop-blur-sm rounded-lg px-3 py-2">
                 <span className="text-sm font-medium text-foreground">Live Preview</span>
               </div>
@@ -82,6 +82,5 @@ export const HeroSection: React.FC = () => {
           </div>
         </div>
       </div>
-    </section>
-  );
+    </section>;
 };

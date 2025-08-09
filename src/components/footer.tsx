@@ -9,7 +9,7 @@ export const Footer: React.FC = () => {
           <div className="space-y-4">
             <div className="flex items-center space-x-2">
               <Shield className="w-6 h-6 text-primary" />
-              <span className="text-xl font-bold">AccessFix</span>
+              <span className="text-xl font-bold">DocWise</span>
             </div>
             <p className="text-muted-foreground text-sm">
               Making documents accessible for everyone, everywhere. 
@@ -29,7 +29,7 @@ export const Footer: React.FC = () => {
             <div className="space-y-3 text-sm text-muted-foreground">
               <div className="flex items-center space-x-2">
                 <Mail className="w-4 h-4" />
-                <span>support@accessfix.com</span>
+                <span>writetoadvaitv@gmail.com</span>
               </div>
               <div className="flex items-center space-x-2">
                 <MapPin className="w-4 h-4" />
