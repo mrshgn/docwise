@@ -1,22 +1,32 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { Helmet } from 'react-helmet-async';
-import { Progress } from '@/components/ui/progress';
-import { Button } from '@/components/ui/button';
-import { CheckCircle2, FileText, Loader2, Settings, Volume2, Square, Download, Eye } from 'lucide-react';
-import { AccessibilityToolbar } from '@/components/accessibility-toolbar';
-import { HeaderBar } from '@/components/header-bar';
-import { supabase } from '@/integrations/supabase/client';
+// src/pages/Analyze.tsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
+import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import {
+  CheckCircle2,
+  FileText,
+  Loader2,
+  Settings,
+  Volume2,
+  Square,
+  Download,
+  Eye,
+} from "lucide-react";
+import { AccessibilityToolbar } from "@/components/accessibility-toolbar";
+import { HeaderBar } from "@/components/header-bar";
+import { supabase } from "@/integrations/supabase/client";
 
 interface LocationState {
   files?: File[];
 }
 
 const steps = [
-  { key: 'upload', label: 'Uploading to secure storage' },
-  { key: 'analyze', label: 'Running AI accessibility analysis' },
-  { key: 'fix', label: 'Applying fixes and tagging' },
-  { key: 'complete', label: 'Finalizing accessible document' },
+  { key: "upload", label: "Uploading to secure storage" },
+  { key: "analyze", label: "Running AI accessibility analysis" },
+  { key: "fix", label: "Applying fixes and tagging" },
+  { key: "complete", label: "Finalizing accessible document" },
 ] as const;
 
 const Analyze: React.FC = () => {
@@ -29,8 +39,8 @@ const Analyze: React.FC = () => {
   const [done, setDone] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
 
-  const [accessibleContent, setAccessibleContent] = useState('');
-  const [summary, setSummary] = useState('');
+  const [accessibleContent, setAccessibleContent] = useState("");
+  const [summary, setSummary] = useState("");
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -39,8 +49,8 @@ const Analyze: React.FC = () => {
     const handleFocusModeChange = (event: CustomEvent) => {
       setFocusMode(event.detail.enabled);
     };
-    window.addEventListener('focusModeChange', handleFocusModeChange as EventListener);
-    return () => window.removeEventListener('focusModeChange', handleFocusModeChange as EventListener);
+    window.addEventListener("focusModeChange", handleFocusModeChange as EventListener);
+    return () => window.removeEventListener("focusModeChange", handleFocusModeChange as EventListener);
   }, []);
 
   const fileNames = useMemo(() => files.map((f) => f.name), [files]);
@@ -71,10 +81,10 @@ const Analyze: React.FC = () => {
     if (!accessibleContent) return;
     setIsDownloading(true);
     try {
-      const fileName = fileNames.length > 0 ? fileNames[0].replace(/\.[^/.]+$/, '') : 'document';
-      const blob = new Blob([accessibleContent], { type: 'text/plain;charset=utf-8' });
+      const fileName = fileNames.length > 0 ? fileNames[0].replace(/\.[^/.]+$/, "") : "document";
+      const blob = new Blob([accessibleContent], { type: "text/plain;charset=utf-8" });
       const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = url;
       link.download = `${fileName}_accessible.txt`;
       document.body.appendChild(link);
@@ -90,47 +100,86 @@ const Analyze: React.FC = () => {
     const processFiles = async () => {
       if (!files.length) return;
 
-      setProgress(10); // Start progress
+      setProgress(10);
       setCurrentStep(0);
+      setDone(false);
 
       try {
-        // 1️⃣ Upload file to Supabase Storage
+        // 1) Upload to Supabase storage (uploads bucket)
         const uploadedPaths: string[] = [];
         for (const file of files) {
           const path = `${Date.now()}-${file.name}`;
-          const { error } = await supabase.storage.from('uploads').upload(path, file);
-          if (error) throw error;
-          uploadedPaths.push(path);
+          const { data, error } = await supabase.storage.from("uploads").upload(path, file);
+          if (error) {
+            console.error("Upload error:", error);
+            throw error;
+          }
+          // data.path is the canonical path returned
+          const uploadedPath = (data as any)?.path ?? path;
+          uploadedPaths.push(uploadedPath);
         }
+
         setProgress(35);
         setCurrentStep(1);
 
-        // 2️⃣ Call Edge Function
-        const res = await fetch(`${supabase.functionsUrl}/gemini-process`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bucket: 'uploads', path: uploadedPaths[0] }),
+        // 2) Call Edge Function using supabase.functions.invoke
+        // Use the Supabase client helper to call the function by name
+        // NOTE: This uses the client and will include anon token if configured. Your function can be public or you can use no-verify-jwt.
+        const fnBody = { bucket: "uploads", path: uploadedPaths[0] };
+
+        // supabase.functions.invoke returns a Response-like object
+        const res = await supabase.functions.invoke("gemini-process", {
+          method: "POST",
+          body: JSON.stringify(fnBody),
+          headers: { "Content-Type": "application/json" },
         });
 
-        if (!res.ok) throw new Error('Edge Function failed');
-        const { accessible_text, summary: aiSummary } = await res.json();
+        // .invoke returns an object with .error (if using older helpers) or standard Response-like shape.
+        // Handle both cases:
+        let json: any = null;
+        if ("error" in res && res.error) {
+          // this path for older client patterns
+          console.error("Function invocation error (client):", (res as any).error);
+          throw new Error((res as any).error.message || "Function invocation error");
+        } else if ("json" in res) {
+          json = await (res as Response).json();
+        } else {
+          // fallback: try parsing
+          const text = await (res as any).text?.();
+          try { json = JSON.parse(text); } catch { json = { error: "Invalid function response", raw: text }; }
+        }
+
+        if (!json) throw new Error("No response from function");
+
+        if (json.error) {
+          console.error("Function returned error:", json.error);
+          throw new Error(json.error);
+        }
+
+        const accessible_text = json.accessible_text ?? json.accessibleText ?? json.accessible;
+        const aiSummary = json.summary ?? json.summaryText ?? json.summary_message ?? "";
+
         setProgress(75);
         setCurrentStep(2);
 
-        // 3️⃣ Update UI with AI results
-        setAccessibleContent(accessible_text || '');
-        setSummary(aiSummary || '');
+        // 3) Update UI
+        setAccessibleContent(accessible_text || "");
+        setSummary(aiSummary || "");
         setProgress(100);
         setCurrentStep(3);
         setDone(true);
-      } catch (err) {
-        console.error('Processing error:', err);
-        setSummary('An error occurred while processing the document.');
+      } catch (err: any) {
+        console.error("Processing pipeline error:", err);
+        setSummary("An error occurred while processing the document. See console for details.");
+        setAccessibleContent("");
         setDone(true);
+        setProgress(100);
+        setCurrentStep(3);
       }
     };
 
     processFiles();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [files]);
 
   if (!files.length) {
@@ -141,7 +190,7 @@ const Analyze: React.FC = () => {
         </Helmet>
         <section className="container mx-auto px-4 py-16">
           <h1 className="text-3xl font-bold mb-4">No files to process</h1>
-          <Button onClick={() => navigate('/')}>Back to upload</Button>
+          <Button onClick={() => navigate("/")}>Back to upload</Button>
         </section>
       </main>
     );
@@ -156,7 +205,6 @@ const Analyze: React.FC = () => {
       <HeaderBar />
 
       <section className="container mx-auto px-4 py-16">
-        {/* Progress steps */}
         <div className="flex items-center gap-2 mb-4">
           <Settings className="w-5 h-5 text-primary animate-spin-slow" />
           <span>{steps[currentStep].label}</span>
@@ -180,7 +228,7 @@ const Analyze: React.FC = () => {
               <h3 className="text-lg font-semibold mb-4">Accessible Document Preview</h3>
               <div className="bg-background border rounded-md p-6 max-h-96 overflow-y-auto">
                 <div className="prose prose-sm whitespace-pre-wrap">
-                  {accessibleContent || 'Accessible content will appear here after AI processing.'}
+                  {accessibleContent || "Accessible content will appear here after AI processing."}
                 </div>
               </div>
               <div className="flex justify-end mt-4">
@@ -191,7 +239,7 @@ const Analyze: React.FC = () => {
                   disabled={!accessibleContent}
                 >
                   {isSpeaking ? <Square className="w-4 h-4 mr-2" /> : <Volume2 className="w-4 h-4 mr-2" />}
-                  {isSpeaking ? 'Stop' : 'Listen'}
+                  {isSpeaking ? "Stop" : "Listen"}
                 </Button>
               </div>
             </section>
@@ -200,9 +248,9 @@ const Analyze: React.FC = () => {
               <div className="flex flex-wrap gap-3">
                 <Button onClick={handleDownload} disabled={!accessibleContent || isDownloading}>
                   <Download className="w-4 h-4 mr-2" />
-                  {isDownloading ? 'Preparing...' : 'Download accessible version'}
+                  {isDownloading ? "Preparing..." : "Download accessible version"}
                 </Button>
-                <Button variant="secondary" onClick={() => navigate('/')}>
+                <Button variant="secondary" onClick={() => navigate("/")}>
                   Process another document
                 </Button>
               </div>
