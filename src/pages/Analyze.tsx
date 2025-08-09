@@ -31,21 +31,16 @@ const Analyze: React.FC = () => {
 
   const [accessibleContent, setAccessibleContent] = useState('');
   const [summary, setSummary] = useState('');
-  const [processedDocumentUrl, setProcessedDocumentUrl] = useState('');
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  // Listen for focus mode changes
   useEffect(() => {
     const handleFocusModeChange = (event: CustomEvent) => {
       setFocusMode(event.detail.enabled);
     };
-    
     window.addEventListener('focusModeChange', handleFocusModeChange as EventListener);
-    return () => {
-      window.removeEventListener('focusModeChange', handleFocusModeChange as EventListener);
-    };
+    return () => window.removeEventListener('focusModeChange', handleFocusModeChange as EventListener);
   }, []);
 
   const fileNames = useMemo(() => files.map((f) => f.name), [files]);
@@ -62,7 +57,7 @@ const Analyze: React.FC = () => {
       utterance.onerror = () => setIsSpeaking(false);
       setIsSpeaking(true);
       window.speechSynthesis.speak(utterance);
-    } catch (e) {
+    } catch {
       setIsSpeaking(false);
     }
   };
@@ -74,14 +69,11 @@ const Analyze: React.FC = () => {
 
   const handleDownload = async () => {
     if (!accessibleContent) return;
-    
     setIsDownloading(true);
     try {
-      // Create a downloadable file from the accessible content
       const fileName = fileNames.length > 0 ? fileNames[0].replace(/\.[^/.]+$/, '') : 'document';
       const blob = new Blob([accessibleContent], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
-      
       const link = document.createElement('a');
       link.href = url;
       link.download = `${fileName}_accessible.txt`;
@@ -89,97 +81,66 @@ const Analyze: React.FC = () => {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Download failed:', error);
     } finally {
       setIsDownloading(false);
     }
   };
 
   useEffect(() => {
-    if (!files.length) return;
+    const processFiles = async () => {
+      if (!files.length) return;
 
-    let p = 0;
-    let s = 0;
-    const interval = setInterval(() => {
-      p = Math.min(100, p + Math.floor(Math.random() * 9) + 4);
-      setProgress(p);
-      if (p > (s + 1) * 25 && s < steps.length - 1) {
-        s += 1;
-        setCurrentStep(s);
-      }
-      if (p >= 100) {
-        clearInterval(interval);
+      setProgress(10); // Start progress
+      setCurrentStep(0);
+
+      try {
+        // 1️⃣ Upload file to Supabase Storage
+        const uploadedPaths: string[] = [];
+        for (const file of files) {
+          const path = `${Date.now()}-${file.name}`;
+          const { error } = await supabase.storage.from('uploads').upload(path, file);
+          if (error) throw error;
+          uploadedPaths.push(path);
+        }
+        setProgress(35);
+        setCurrentStep(1);
+
+        // 2️⃣ Call Edge Function
+        const res = await fetch(`${supabase.functionsUrl}/gemini-process`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bucket: 'uploads', path: uploadedPaths[0] }),
+        });
+
+        if (!res.ok) throw new Error('Edge Function failed');
+        const { accessible_text, summary: aiSummary } = await res.json();
+        setProgress(75);
+        setCurrentStep(2);
+
+        // 3️⃣ Update UI with AI results
+        setAccessibleContent(accessible_text || '');
+        setSummary(aiSummary || '');
+        setProgress(100);
+        setCurrentStep(3);
+        setDone(true);
+      } catch (err) {
+        console.error('Processing error:', err);
+        setSummary('An error occurred while processing the document.');
         setDone(true);
       }
-    }, 450);
+    };
 
-    return () => clearInterval(interval);
-  }, [files.length]);
+    processFiles();
+  }, [files]);
 
-  useEffect(() => {
-    if (!done) return;
-    // Placeholder content – replace with Edge Function response
-    const names = fileNames.join(', ');
-    
-    // Enhanced accessible content with proper structure
-    const accessibleDoc = `# Accessible Document: ${names}
-
-## Table of Contents
-1. Introduction
-2. Main Content
-3. Key Information
-4. Summary
-
-## Introduction
-This document has been optimized for accessibility, ensuring it can be easily read by screen readers and users with various disabilities.
-
-## Main Content
-
-### What We Fixed:
-- **Heading Structure**: Applied proper heading hierarchy (H1-H6) for logical navigation
-- **Reading Order**: Reorganized content to follow a natural, sequential flow
-- **Form Elements**: Added descriptive labels to all interactive elements
-- **Alt Text**: Generated meaningful descriptions for images and graphics
-- **Color Contrast**: Ensured WCAG AA compliance for all text-background combinations
-- **Link Descriptions**: Made link text descriptive and meaningful
-- **Table Structure**: Added proper headers and captions for data tables
-
-### Content Summary:
-This document contains important information that has been restructured for maximum accessibility. The content flows logically from introduction through main topics to conclusion.
-
-### Key Features Added:
-- Screen reader compatibility
-- Keyboard navigation support
-- High contrast mode compatibility
-- Proper semantic markup
-- Descriptive headings and sections
-
-## Summary
-Your document is now compliant with WCAG 2.1 AA accessibility standards. It provides a better experience for all users, particularly those using assistive technologies.
-
----
-Document processed on: ${new Date().toLocaleDateString()}
-Accessibility improvements: Complete`;
-
-    setAccessibleContent(accessibleDoc);
-    setSummary(
-      "Successfully transformed your document into an accessible format! Key improvements include proper heading structure, enhanced reading order, labeled interactive elements, and WCAG AA compliance for better screen reader support."
-    );
-  }, [done, fileNames]);
-
-  // If user navigates here directly
   if (!files.length) {
     return (
       <main className="min-h-screen bg-background">
         <Helmet>
           <title>Analyze Documents | Accessible AI</title>
-          <meta name="description" content="Upload documents for AI-powered accessibility analysis and remediation." />
-          <link rel="canonical" href="/analyze" />
         </Helmet>
         <section className="container mx-auto px-4 py-16">
-          <h1 className="text-3xl font-bold text-foreground mb-4">No files to process</h1>
-          <p className="text-muted-foreground mb-6">Please upload a document first.</p>
+          <h1 className="text-3xl font-bold mb-4">No files to process</h1>
           <Button onClick={() => navigate('/')}>Back to upload</Button>
         </section>
       </main>
@@ -190,137 +151,64 @@ Accessibility improvements: Complete`;
     <main className="min-h-screen bg-background">
       <Helmet>
         <title>Processing Your Document | Accessible AI</title>
-        <meta name="description" content="Processing and fixing document accessibility using AI. Live progress and final results." />
-        <link rel="canonical" href="/analyze" />
       </Helmet>
 
       <HeaderBar />
 
       <section className="container mx-auto px-4 py-16">
-        <header className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-foreground">Making your document accessible</h1>
-          <p className="text-muted-foreground mt-2">We're analyzing and remediating accessibility issues automatically.</p>
-        </header>
+        {/* Progress steps */}
+        <div className="flex items-center gap-2 mb-4">
+          <Settings className="w-5 h-5 text-primary animate-spin-slow" />
+          <span>{steps[currentStep].label}</span>
+        </div>
+        <Progress value={progress} />
+        <p className="text-xs mt-2">{progress}% complete</p>
 
-        <article className="bg-card border rounded-lg p-6 shadow-medium">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Settings className="w-5 h-5 text-primary animate-spin-slow" />
-              <span className="text-sm font-medium text-foreground">{steps[currentStep].label}</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {fileNames.map((name, i) => (
-                <span key={i} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-accent-light text-foreground">
-                  <FileText className="w-3 h-3" />
-                  {name}
-                </span>
-              ))}
-            </div>
+        {done && (
+          <div className="mt-8 space-y-6">
+            {!focusMode && summary && (
+              <article className="bg-success-light/40 border border-success/20 rounded-lg p-4">
+                <Eye className="w-5 h-5 text-success" />
+                <h3 className="text-base font-medium">Processing Summary</h3>
+                <p className="text-sm mt-2">{summary}</p>
+              </article>
+            )}
+
+            <AccessibilityToolbar className="mb-6" />
+
+            <section className="bg-card border rounded-lg p-6">
+              <h3 className="text-lg font-semibold mb-4">Accessible Document Preview</h3>
+              <div className="bg-background border rounded-md p-6 max-h-96 overflow-y-auto">
+                <div className="prose prose-sm whitespace-pre-wrap">
+                  {accessibleContent || 'Accessible content will appear here after AI processing.'}
+                </div>
+              </div>
+              <div className="flex justify-end mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => (isSpeaking ? handleStopNarration() : handleNarrate())}
+                  disabled={!accessibleContent}
+                >
+                  {isSpeaking ? <Square className="w-4 h-4 mr-2" /> : <Volume2 className="w-4 h-4 mr-2" />}
+                  {isSpeaking ? 'Stop' : 'Listen'}
+                </Button>
+              </div>
+            </section>
+
+            {!focusMode && (
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={handleDownload} disabled={!accessibleContent || isDownloading}>
+                  <Download className="w-4 h-4 mr-2" />
+                  {isDownloading ? 'Preparing...' : 'Download accessible version'}
+                </Button>
+                <Button variant="secondary" onClick={() => navigate('/')}>
+                  Process another document
+                </Button>
+              </div>
+            )}
           </div>
-
-          <div className="mt-4">
-            <Progress value={progress} />
-            <p className="text-xs text-muted-foreground mt-2">{progress}% complete</p>
-          </div>
-
-          {!done ? (
-            <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Working… This usually takes under a minute.
-            </div>
-          ) : (
-            <div className="mt-8 space-y-6">
-              {/* Show everything when not in focus mode */}
-              {!focusMode && (
-                <>
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="w-6 h-6 text-success" />
-                    <div>
-                      <h2 className="text-xl font-semibold text-foreground">Accessibility fixes applied</h2>
-                      <p className="text-muted-foreground mt-1">
-                        Fantastic work—your content is now more inclusive. Headings normalized, reading order corrected,
-                        forms labeled, and WCAG AA compliance achieved.
-                      </p>
-                    </div>
-                  </div>
-
-                  {summary && (
-                    <article className="bg-success-light/40 border border-success/20 rounded-lg p-4">
-                      <div className="flex items-start gap-2">
-                        <Eye className="w-5 h-5 text-success mt-0.5" />
-                        <div>
-                          <h3 className="text-base font-medium text-foreground">Processing Summary</h3>
-                          <p className="text-sm text-muted-foreground mt-2">{summary}</p>
-                        </div>
-                      </div>
-                    </article>
-                  )}
-                </>
-              )}
-
-              <AccessibilityToolbar className="mb-6" />
-
-              <section className="bg-card border rounded-lg p-6 shadow-medium">
-                <div className="flex items-center gap-2 mb-4">
-                  <FileText className="w-5 h-5 text-primary" />
-                  <h3 className="text-lg font-semibold text-foreground">Accessible Document Preview</h3>
-                </div>
-                
-                <div className="bg-background border rounded-md p-6 max-h-96 overflow-y-auto">
-                  <div className="prose prose-sm max-w-none text-foreground whitespace-pre-wrap">
-                    {accessibleContent || "Accessible content will appear here after AI processing."}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <div className="text-xs text-muted-foreground">
-                    Document optimized for screen readers and accessibility compliance
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => (isSpeaking ? handleStopNarration() : handleNarrate())}
-                      disabled={!accessibleContent}
-                    >
-                      {isSpeaking ? (
-                        <>
-                          <Square className="w-4 h-4 mr-2" />
-                          Stop
-                        </>
-                      ) : (
-                        <>
-                          <Volume2 className="w-4 h-4 mr-2" />
-                          Listen
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </section>
-
-              {!focusMode && (
-                <div className="flex flex-wrap gap-3">
-                  <Button 
-                    onClick={handleDownload}
-                    disabled={!accessibleContent || isDownloading}
-                    className="bg-gradient-primary hover:opacity-90"
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    {isDownloading ? 'Preparing...' : 'Download accessible version'}
-                  </Button>
-                  <Button variant="secondary" onClick={() => navigate('/')}>
-                    Process another document
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </article>
-
-        <aside className="mt-8 text-sm text-muted-foreground">
-          Note: For real AI processing, connect Supabase and add your GEMINI_API_KEY to Edge Function Secrets. Upload files to Supabase Storage, then call an Edge Function (Gemini) to extract, fix, summarize, and return accessible output and preview HTML. This screen will display those results.
-        </aside>
+        )}
       </section>
     </main>
   );
